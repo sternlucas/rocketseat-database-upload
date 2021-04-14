@@ -24,12 +24,15 @@ class Transaction {
   })
   type: 'income' | 'outcome';
 
-  @Column()
+  @Column('decimal')
   value: number;
+
+  @Column()
+  category_id: string;
 
   @OneToOne(() => Category)
   @JoinColumn({ name: 'category_id' })
-  category_id: string;
+  category: Category;
 
   @CreateDateColumn()
   created_at: Date;
