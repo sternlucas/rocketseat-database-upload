@@ -1,4 +1,4 @@
-import { EntityRepository, Repository } from 'typeorm';
+import { EntityRepository, In, Repository } from 'typeorm';
 import Category from '../models/Category';
 
 @EntityRepository(Category)
@@ -15,6 +15,15 @@ class CategoriesRepository extends Repository<Category> {
     await this.save(category);
 
     return category;
+  }
+
+  public async findCategories(titles: string[]): Promise<Category[]> {
+    const categories = await this.find({
+      where: { title: In(titles) },
+      select: ['title'],
+    });
+
+    return categories;
   }
 }
 

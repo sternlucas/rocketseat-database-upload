@@ -2,6 +2,8 @@ import fs from 'fs';
 import cvsParse from 'csv-parse';
 import Transaction from '../models/Transaction';
 import CreateTransactionService from './CreateTransactionService';
+import HandleImportedCategoriesService from './HandleImportedCategoriesService';
+import AppError from '../errors/AppError';
 
 interface FileType {
   title: string;
@@ -10,37 +12,40 @@ interface FileType {
   category: string;
 }
 
+interface Balance {
+  income: number;
+  outcome: number;
+  total: number;
+}
+
 class ImportTransactionsService {
   public async execute(filePath: string): Promise<Transaction[]> {
     const transactionsImported = await this.getImportedTransactions(filePath);
 
-    const createTransactionService = new CreateTransactionService();
+    this.checkTransactionsValues(transactionsImported);
 
-    const transactionsPromises = Array<Promise<Transaction>>();
-    transactionsImported.forEach(transaction => {
-      const { title, value, type, category } = transaction;
-      transactionsPromises.push(
-        createTransactionService.execute({
-          title,
-          value,
-          type,
-          categoryTitle: category,
-        }),
-      );
-    });
+    // Get categories
+    const categories = transactionsImported.map(
+      transaction => transaction.category,
+    );
 
-    const transactions = Array<Transaction>();
+    const handleCategories = new HandleImportedCategoriesService();
+    await handleCategories.execute(categories);
 
-    // transactionsPromises.reduce((prev: Promise, task: Promise) => {
-    //   return prev.then(task);
-    // }, Promise.resolve());
+    // Create imported transactions
+    const incomeTransactionsPromises = this.getTransactionPromise(
+      transactionsImported,
+      'income',
+    );
+    const incomeTransactions = await Promise.all(incomeTransactionsPromises);
 
-    // transactionsPromises.forEach(promise => {
-    //   const transaction = Promise.resolve(promise);
-    //   transactions.push(transaction);
-    // });
+    const outcomeTransactionsPromises = this.getTransactionPromise(
+      transactionsImported,
+      'outcome',
+    );
+    const outcomeTransactions = await Promise.all(outcomeTransactionsPromises);
 
-    return transactions;
+    return incomeTransactions.concat(outcomeTransactions);
   }
 
   private async getImportedTransactions(filePath: string): Promise<FileType[]> {
@@ -79,6 +84,57 @@ class ImportTransactionsService {
     });
 
     return lines;
+  }
+
+  private checkTransactionsValues(transactionsImported: FileType[]): void {
+    const { income, outcome } = transactionsImported.reduce(
+      (accumulator: Omit<Balance, 'total'>, transaction: FileType) => {
+        switch (transaction.type) {
+          case 'income':
+            accumulator.income += Number(transaction.value);
+            break;
+          case 'outcome':
+            accumulator.outcome += Number(transaction.value);
+            break;
+          default:
+            break;
+        }
+
+        return accumulator;
+      },
+      { income: 0, outcome: 0 },
+    );
+
+    if (income < outcome) {
+      throw new AppError(
+        'Not be able to create outcome transaction without a valid balance',
+      );
+    }
+  }
+
+  private getTransactionPromise(
+    transactionsImported: FileType[],
+    transactionType: string,
+  ): Array<Promise<Transaction>> {
+    const createTransactionService = new CreateTransactionService();
+
+    const promises = Array<Promise<Transaction>>();
+
+    transactionsImported
+      .filter(transaction => transaction.type === transactionType)
+      .forEach(transaction => {
+        const { title, value, type, category } = transaction;
+        promises.push(
+          createTransactionService.execute({
+            title,
+            value,
+            type,
+            categoryTitle: category,
+          }),
+        );
+      });
+
+    return promises;
   }
 }
 

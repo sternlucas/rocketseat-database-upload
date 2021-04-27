@@ -1,8 +1,10 @@
 // import AppError from '../errors/AppError';
 
 import { getCustomRepository } from 'typeorm';
+import AppError from '../errors/AppError';
 import Transaction from '../models/Transaction';
 import TransactionsRepository from '../repositories/TransactionsRepository';
+import GetTransactionsService from './GetTransactionsService';
 import HandleCategoryService from './HandleCategoryService';
 
 interface Request {
@@ -19,6 +21,16 @@ class CreateTransactionService {
     type,
     categoryTitle,
   }: Request): Promise<Transaction> {
+    const getTransactionsService = new GetTransactionsService();
+
+    const transactions = await getTransactionsService.execute();
+
+    if (type === 'outcome' && value > transactions.balance.total) {
+      throw new AppError(
+        'Not be able to create outcome transaction without a valid balance',
+      );
+    }
+
     const handleCategory = new HandleCategoryService();
     const category = await handleCategory.execute(categoryTitle);
 
@@ -31,9 +43,7 @@ class CreateTransactionService {
       category,
     });
 
-    await transactionRepository.save(transaction);
-
-    return transaction;
+    return transactionRepository.save(transaction);
   }
 }
 
